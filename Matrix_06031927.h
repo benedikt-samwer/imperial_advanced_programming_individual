@@ -41,21 +41,30 @@ namespace adv_prog_cw
 		// Step 3.2:  Division of the Matrix_06031927 by a scalar
 		Matrix_06031927& operator/=(fT scalar);
 		// Step 3.3:  A method to compute the determinant of square matrices
-		fT Determinant() const;
+		bool Determinant(fT& det) const;
 		// Step 3.4:  A method to compute the inverse of the Matrix_06031927
 		bool Inverse(Matrix_06031927& result) const;
-		// Step 3.4:  A method to compute the inverse of the Matrix_06031927
-		bool Inverse2(Matrix_06031927& result) const;
 		
 	private:
-		std::vector<std::vector<fT> >  data;
-		size_t                   rows, cols;
+		std::vector<std::vector<fT>> data;
+		size_t rows, cols;
 	
-		bool  CheckRange(size_t m, size_t n, const char* originator) const;
-		bool  CheckSizes(const Matrix_06031927& mat, const char* originator) const;
-		bool  DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
-		bool ParallelLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
+		// Existing private functions with template arguments:
+		bool CheckRange(size_t m, size_t n, const char* originator) const;
+		bool CheckSizes(const Matrix_06031927<fT>& mat, const char* originator) const;
+		bool DecomposeLU(Matrix_06031927<fT>& A, std::vector<size_t>& perm, int& swaps) const;
+		bool ParallelLU(Matrix_06031927<fT>& A, std::vector<size_t>& perm, int& swaps) const;
+	
+		// Helper functions for block operations:
+		Matrix_06031927<fT> ExtractBlock(const Matrix_06031927<fT>& A, size_t rowStart, size_t colStart, size_t numRows, size_t numCols) const;
+		void SetBlock(Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, size_t rowStart, size_t colStart) const;
+		void ParallelMultiply(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, Matrix_06031927<fT>& C) const;
+		Matrix_06031927<fT> MatrixAdd(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) const;
+		Matrix_06031927<fT> MatrixSubtract(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) const;
+		bool BlockInverse(const Matrix_06031927<fT>& A, Matrix_06031927<fT>& A_inv) const;
+		bool BlockDeterminant(const Matrix_06031927<fT>& A, fT& det) const;
 	};
+	
 
 	// associated operators
 	template<typename fT>
@@ -163,6 +172,9 @@ namespace adv_prog_cw
 		}
 		return true;
 	}
+
+	// LU Decomposition helper function for determinant and inverse calculations
+	//bool DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
 } // end scope
 
 #endif

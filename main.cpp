@@ -32,13 +32,16 @@ Matrix_06031927<fT> generateRandomMatrix(size_t rows, size_t cols) {
 
 // Function to test accuracy of determinant (using a simple 2x2 matrix for verification)
 void testDeterminantAccuracy() {
-    Matrix_06031927<fT> mat(2, 2);
+    Matrix_06031927<double> mat(2, 2);
     mat(0, 0) = 1; mat(0, 1) = 2;
     mat(1, 0) = 3; mat(1, 1) = 4;
-    fT det = mat.Determinant();
-    fT expected = -2.0; // Known determinant for [[1, 2], [3, 4]]
-    assert(abs(det - expected) < 1e-6);
-    cout << "Determinant accuracy test passed for 2x2 matrix." << endl;
+    double det;
+    // Call the determinant function with an output parameter.
+    bool success = mat.Determinant(det);
+    // For a 2x2 matrix [[1,2],[3,4]], the determinant is (1*4 - 2*3) = -2.
+    double expected = -2.0;
+    assert(success && fabs(det - expected) < 1e-6);
+    std::cout << "Determinant accuracy test passed for 2x2 matrix." << std::endl;
 }
 
 // Function to test accuracy of matrix inversion
@@ -102,11 +105,10 @@ int main() {
         // Test Inversion Speed
         Matrix_06031927<fT> inv;
         measureTime([&]() { mat.Inverse(inv); }, "Matrix inversion", size);
-
-        // Test Determinant Speed
-        measureTime([&]() { mat.Determinant(); }, "Determinant calculation", size);
-
-
+        measureTime([&]() { 
+            double det;
+            mat.Determinant(det);
+        }, "Determinant calculation", size);
     }
 
     cout << "\nAll tests completed successfully." << endl;

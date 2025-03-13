@@ -344,99 +344,10 @@ namespace adv_prog_cw {
     //   - Determinant value of the matrix.
     // Throws:
     //   - std::length_error if the matrix is not square.
-    template<typename fT>
-	bool Matrix_06031927<fT>::ParallelLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const {
-		size_t n = A.Rows();
-		perm.resize(n);
-		for (size_t i = 0; i < n; i++) perm[i] = i;
-		swaps = 0;
 
-		const size_t blockSize = 128;  // Tuned for cache efficiency
+    //---------------------- Helper Functions ----------------------//
 
-		for (size_t k = 0; k < n; k++) {
-			// **Parallel Pivot Selection**
-			size_t pivotRow = k;
-			fT max_val = std::abs(A(perm[k], k));
-
-			#pragma omp parallel for reduction(max: max_val) reduction(max: pivotRow)
-			for (size_t i = k + 1; i < n; i++) {
-				fT cur_val = std::abs(A(perm[i], k));
-				if (cur_val > max_val) {
-					max_val = cur_val;
-					pivotRow = i;
-				}
-			}
-
-			// **Check for singularity**
-			if (max_val == static_cast<fT>(0)) return false;
-
-			// **Swap rows in permutation vector**
-			if (pivotRow != k) {
-				std::swap(perm[k], perm[pivotRow]);
-				swaps++;
-			}
-
-			fT pivot = A(perm[k], k);
-
-			// **Parallel Row Updates (Blocked)**
-			#pragma omp parallel for schedule(dynamic)
-			for (size_t i = k + 1; i < n; i++) {
-				fT m = A(perm[i], k) / pivot;
-				A(perm[i], k) = m;
-
-				for (size_t j = k + 1; j < n; j += blockSize) {
-					size_t j_end = std::min(j + blockSize, n);
-
-					#pragma omp simd
-					for (size_t jj = j; jj < j_end; jj++) {
-						A(perm[i], jj) -= m * A(perm[k], jj);
-					}
-				}
-			}
-		}
-		return true;
-	}
-
-    
-    template<typename fT>
-	fT Matrix_06031927<fT>::Determinant() const {
-		if (rows != cols) {
-			throw std::invalid_argument("Matrix must be square for determinant calculation");
-		}
-	
-		Matrix_06031927 A = *this; // Work on a copy (LU is done in-place)
-		std::vector<size_t> perm;
-		int swaps = 0;
-	
-		if (!ParallelLU(A, perm, swaps)) {
-			return static_cast<fT>(0); // Singular matrix
-		}
-	
-		// **Parallel Determinant Computation**
-		fT det = static_cast<fT>(1);
-		#pragma omp parallel for reduction(*:det)
-		for (size_t i = 0; i < rows; i++) {
-			det *= A(perm[i], i);
-		}
-	
-		// Adjust sign based on row swaps
-		return (swaps % 2 == 0) ? det : -det;
-	}
-
-    // ------------------------------------------------------------------
-    // Step 3.4: Compute the Inverse of the Matrix
-    // ------------------------------------------------------------------
-    // Computes the inverse of the matrix and stores the result in 'result'.
-    // Parameters:
-    //   - result: a Matrix_06031927 object where the inverse will be stored.
-    // Returns:
-    //   - true if the matrix is invertible, false otherwise.
-    // Note:
-    //   - This method uses the Gauss-Jordan elimination with partial pivoting.
-
-    // -------------------- Helper Functions -------------------- //
-
-    // Extracts a submatrix from A starting at (rowStart, colStart)
+    // ExtractBlock: extracts a submatrix from A starting at (rowStart, colStart)
     // with dimensions (numRows x numCols).
     template<typename fT>
     Matrix_06031927<fT> ExtractBlock(const Matrix_06031927<fT>& A, size_t rowStart, size_t colStart, size_t numRows, size_t numCols) {
@@ -449,8 +360,7 @@ namespace adv_prog_cw {
         return block;
     }
 
-    // Sets a block into matrix A starting at (rowStart, colStart)
-    // with the contents of B.
+    // SetBlock: sets the contents of B into matrix A starting at (rowStart, colStart).
     template<typename fT>
     void SetBlock(Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, size_t rowStart, size_t colStart) {
         size_t numRows = B.Rows();
@@ -462,7 +372,7 @@ namespace adv_prog_cw {
         }
     }
 
-    // Parallel matrix multiplication: C = A * B.
+    // ParallelMultiply: performs matrix multiplication C = A * B using OpenMP.
     template<typename fT>
     void ParallelMultiply(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, Matrix_06031927<fT>& C) {
         size_t m = A.Rows();
@@ -481,7 +391,7 @@ namespace adv_prog_cw {
         }
     }
 
-    // Matrix addition: C = A + B.
+    // MatrixAdd: returns the matrix sum C = A + B.
     template<typename fT>
     Matrix_06031927<fT> MatrixAdd(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) {
         size_t m = A.Rows(), n = A.Cols();
@@ -495,7 +405,7 @@ namespace adv_prog_cw {
         return C;
     }
 
-    // Matrix subtraction: C = A - B.
+    // MatrixSubtract: returns the matrix difference C = A - B.
     template<typename fT>
     Matrix_06031927<fT> MatrixSubtract(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) {
         size_t m = A.Rows(), n = A.Cols();
@@ -509,6 +419,134 @@ namespace adv_prog_cw {
         return C;
     }
 
+    //------------------- Recursive Block Determinant -------------------//
+
+    // BlockDeterminant recursively computes the determinant of a square matrix A.
+    // Parameters:
+    //   A   - The matrix whose determinant is to be computed.
+    //   det - A reference where the computed determinant will be stored.
+    // Returns:
+    //   true if the determinant is computed successfully, false otherwise.
+    template<typename fT>
+    bool BlockDeterminant(const Matrix_06031927<fT>& A, fT &det) {
+        size_t n = A.Rows();
+        const fT epsilon = static_cast<fT>(1e-12);
+        
+        // Base case: 1x1 matrix.
+        if(n == 1) {
+            det = A(0, 0);
+            return true;
+        }
+        // Base case: 2x2 matrix using the formula:
+        // det = a11*a22 - a12*a21.
+        if(n == 2) {
+            det = A(0,0) * A(1,1) - A(0,1) * A(1,0);
+            return true;
+        }
+        
+        // Partition A into four blocks.
+        size_t k = n / 2;       // Size of block A11.
+        size_t r = n - k;       // Size of the remaining blocks.
+        Matrix_06031927<fT> A11 = ExtractBlock(A, 0, 0, k, k);
+        Matrix_06031927<fT> A12 = ExtractBlock(A, 0, k, k, r);
+        Matrix_06031927<fT> A21 = ExtractBlock(A, k, 0, r, k);
+        Matrix_06031927<fT> A22 = ExtractBlock(A, k, k, r, r);
+        
+        // Compute determinant of A11 recursively.
+        fT detA11;
+        if (!BlockDeterminant(A11, detA11))
+            return false;
+        // If A11 is nearly singular, the determinant is (practically) zero.
+        if (std::abs(detA11) < epsilon) {
+            det = 0;
+            return true;
+        }
+        
+        // To form the Schur complement, we need A11^{-1}.
+        // We use our previously defined BlockInverse method.
+        Matrix_06031927<fT> A11_inv;
+        if (!BlockInverse(A11, A11_inv)) {  // If A11 is singular.
+            det = 0;
+            return true;
+        }
+        
+        // Compute the product A21 * A11_inv * A12.
+        Matrix_06031927<fT> temp;
+        ParallelMultiply(A11_inv, A12, temp);
+        Matrix_06031927<fT> prod;
+        ParallelMultiply(A21, temp, prod);
+        
+        // Compute the Schur complement: S = A22 - A21*A11^{-1}A12.
+        Matrix_06031927<fT> S = MatrixSubtract(A22, prod);
+        
+        // Recursively compute the determinant of the Schur complement.
+        fT detS;
+        if (!BlockDeterminant(S, detS))
+            return false;
+        
+        // The determinant of A is given by:
+        // det(A) = det(A11) * det(S)
+        det = detA11 * detS;
+        return true;
+    }
+
+    //------------------- Public Determinant() Method -------------------//
+
+    template<typename fT>
+    bool Matrix_06031927<fT>::Determinant(fT& det) const {
+        // Determinant is only defined for square matrices.
+        if (rows != cols)
+            return false;
+        return BlockDeterminant(*this, det);
+    }
+
+    //------------------- Sample Implementations for Other Methods -------------------//
+
+    template<typename fT>
+    Matrix_06031927<fT>::Matrix_06031927(size_t m, size_t n, fT val)
+        : rows(m), cols(n), data(m, std::vector<fT>(n, val))
+    {
+    }
+
+    template<typename fT>
+    size_t Matrix_06031927<fT>::Rows() const { return rows; }
+
+    template<typename fT>
+    size_t Matrix_06031927<fT>::Cols() const { return cols; }
+
+    template<typename fT>
+    void Matrix_06031927<fT>::Resize(size_t m, size_t n) {
+        rows = m;
+        cols = n;
+        data.resize(m);
+        for (size_t i = 0; i < m; i++)
+            data[i].resize(n);
+    }
+
+    template<typename fT>
+    fT& Matrix_06031927<fT>::operator()(size_t i, size_t j) {
+        return data[i][j];
+    }
+
+    template<typename fT>
+    const fT& Matrix_06031927<fT>::operator()(size_t i, size_t j) const {
+        return data[i][j];
+    }
+
+    // Destructor and copy constructor would be implemented as needed.
+
+    // ------------------------------------------------------------------
+    // Step 3.4: Compute the Inverse of the Matrix
+    // ------------------------------------------------------------------
+    // Computes the inverse of the matrix and stores the result in 'result'.
+    // Parameters:
+    //   - result: a Matrix_06031927 object where the inverse will be stored.
+    // Returns:
+    //   - true if the matrix is invertible, false otherwise.
+    // Note:
+    //   - This method uses the Gauss-Jordan elimination with partial pivoting.
+
+    
     // -------------------- Recursive Block Inversion -------------------- //
 
     // This function attempts to compute the inverse of matrix A (which must be square)
