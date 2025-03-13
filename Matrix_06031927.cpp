@@ -428,10 +428,10 @@ namespace adv_prog_cw {
 			perm[i] = i;
 		}
 		swaps = 0;
-		const size_t blockSize = 64; // Blocking parameter (tune this for your architecture)
+		const size_t blockSize = 64;  // Tuning parameter
 
 		for (size_t k = 0; k < n; k++) {
-			// Pivot selection (sequential search)
+			// Pivot selection (sequential)
 			size_t pivotRow = k;
 			fT max_val = std::abs(A(perm[k], k));
 			for (size_t i = k + 1; i < n; i++) {
@@ -441,21 +441,20 @@ namespace adv_prog_cw {
 					pivotRow = i;
 				}
 			}
-			if (max_val == 0) {
-				return false; // Matrix is singular
-			}
+			if (max_val == static_cast<fT>(0))
+				return false;  // Singular matrix
+
 			if (pivotRow != k) {
 				std::swap(perm[k], perm[pivotRow]);
 				swaps++;
 			}
 			fT pivot = A(perm[k], k);
 
-			// Update the trailing submatrix with blocked inner loops
+			// Update the trailing submatrix in parallel with blocking
 			#pragma omp parallel for schedule(dynamic)
 			for (size_t i = k + 1; i < n; i++) {
 				fT m = A(perm[i], k) / pivot;
 				A(perm[i], k) = m;
-				// Block the inner update loop for better cache performance
 				for (size_t j = k + 1; j < n; j += blockSize) {
 					size_t j_end = std::min(j + blockSize, n);
 					for (size_t jj = j; jj < j_end; jj++) {
@@ -466,7 +465,7 @@ namespace adv_prog_cw {
 		}
 		return true;
 	}
-
+/*
 	template<typename fT>
 	fT Matrix_06031927<fT>::Determinant() const {
 		if (rows != cols) {
@@ -489,6 +488,7 @@ namespace adv_prog_cw {
 		}
 		return det;
 	}
+		
 	// Matrix Inversion
 	// ---------------------------------------
 	// Computes the inverse of the matrix and stores it in the result parameter.
@@ -498,69 +498,63 @@ namespace adv_prog_cw {
 	//   true if the matrix is invertible, false if not (singular or not square)
 	template<typename fT>
 	bool Matrix_06031927<fT>::Inverse(Matrix_06031927& result) const {
-		if (rows != cols) {
-			return false; // Not square
-		}
+		if (rows != cols)
+			return false;  // Must be square
+		size_t n = rows;
+		
+		// Make a copy for in-place LU decomposition.
 		Matrix_06031927 A = *this;
 		std::vector<size_t> perm;
 		int swaps;
-		if (!DecomposeLU(A, perm, swaps)) {
-			return false; // Singular matrix
-		}
-		size_t n = rows;
-		result.Resize(n, n);
+		if (!DecomposeLU(A, perm, swaps))
+			return false;  // Singular matrix
+	
+		// Compute inverse permutation: perm_inv[perm[i]] = i
 		std::vector<size_t> perm_inv(n);
 		for (size_t i = 0; i < n; i++) {
 			perm_inv[perm[i]] = i;
 		}
-		if (n > 100) {  // Threshold: only parallelize for n > 100
-			#pragma omp parallel for schedule(dynamic)
+		result.Resize(n, n);
+	
+		// Solve for each column of the inverse.
+		// Use an OpenMP parallel region to allocate thread-local temporary buffers.
+		#pragma omp parallel
+		{
+			std::vector<fT> b(n, static_cast<fT>(0));
+			std::vector<fT> y(n, static_cast<fT>(0));
+			std::vector<fT> x(n, static_cast<fT>(0));
+	
+			#pragma omp for schedule(dynamic)
 			for (size_t j = 0; j < n; j++) {
-				std::vector<fT> b(n, static_cast<fT>(0));
-				b[perm_inv[j]] = static_cast<fT>(1); // P * e_j
-				// Forward substitution: L * y = P * e_j
-				std::vector<fT> y(n, static_cast<fT>(0));
-				for (size_t i = 0; i < n; i++) {
-					fT sum = static_cast<fT>(0);
-					for (size_t k = 0; k < i; k++) {
-						sum += A(perm[i], k) * y[k];
-					}
-					y[i] = b[i] - sum;
-				}
-				// Backward substitution: U * x = y
-				std::vector<fT> x(n, static_cast<fT>(0));
-				for (int i = n - 1; i >= 0; i--) {
-					fT sum = static_cast<fT>(0);
-					for (size_t k = i + 1; k < n; k++) {
-						sum += A(perm[i], k) * x[k];
-					}
-					x[i] = (y[i] - sum) / A(perm[i], i);
-				}
-				// Set column j of result
-				for (size_t i = 0; i < n; i++) {
-					result(i, j) = x[i];
-				}
-			}
-		} else {
-			for (size_t j = 0; j < n; j++) {
-				std::vector<fT> b(n, static_cast<fT>(0));
+				// Reset temporary buffers.
+				std::fill(b.begin(), b.end(), static_cast<fT>(0));
+				std::fill(y.begin(), y.end(), static_cast<fT>(0));
+				std::fill(x.begin(), x.end(), static_cast<fT>(0));
+				
+				// b = P * e_j, implemented using the inverse permutation.
 				b[perm_inv[j]] = static_cast<fT>(1);
-				std::vector<fT> y(n, static_cast<fT>(0));
+	
+				// Forward substitution: solve L * y = b.
 				for (size_t i = 0; i < n; i++) {
 					fT sum = static_cast<fT>(0);
+					size_t row_index = perm[i];
 					for (size_t k = 0; k < i; k++) {
-						sum += A(perm[i], k) * y[k];
+						sum += A(row_index, k) * y[k];
 					}
 					y[i] = b[i] - sum;
 				}
-				std::vector<fT> x(n, static_cast<fT>(0));
-				for (int i = n - 1; i >= 0; i--) {
+	
+				// Backward substitution: solve U * x = y.
+				for (int i = static_cast<int>(n) - 1; i >= 0; i--) {
 					fT sum = static_cast<fT>(0);
+					size_t row_index = perm[i];
 					for (size_t k = i + 1; k < n; k++) {
-						sum += A(perm[i], k) * x[k];
+						sum += A(row_index, k) * x[k];
 					}
-					x[i] = (y[i] - sum) / A(perm[i], i);
+					x[i] = (y[i] - sum) / A(row_index, i);
 				}
+	
+				// Write the computed column into the result.
 				for (size_t i = 0; i < n; i++) {
 					result(i, j) = x[i];
 				}
