@@ -1,6 +1,9 @@
 #include "Matrix_06031927.h"
 #include <cassert>
-
+#include <vector>
+#include <cmath>
+#include <omp.h>
+#include <stdexcept>
 
 using namespace std;
 
@@ -332,15 +335,15 @@ namespace adv_prog_cw {
 	}
 
     // LU Decomposition Helper Function
-    // ---------------------------------------
-    // Performs LU decomposition with partial pivoting on a copy of the matrix.
-    // Parameters:
-    //   A - Matrix to decompose (modified in-place to store L and U)
-    //   perm - Vector storing the row permutation
-    //   swaps - Number of row swaps performed (affects determinant sign)
-    // Returns:
-    //   true if the matrix is non-singular, false if singular
-    template<typename fT>
+	// ---------------------------------------
+	// Performs LU decomposition with partial pivoting on a copy of the matrix.
+	// Parameters:
+	//   A - Matrix to decompose (modified in-place to store L and U)
+	//   perm - Vector storing the row permutation
+	//   swaps - Number of row swaps performed (affects determinant sign)
+	// Returns:
+	//   true if the matrix is non-singular, false if singular
+	/*template<typename fT>
 	bool Matrix_06031927<fT>::DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const {
 		size_t n = A.Rows();
 		perm.resize(n);
@@ -387,13 +390,15 @@ namespace adv_prog_cw {
 		return true;
 	}
 
-    // Determinant Calculation
-    // ---------------------------------------
-    // Computes the determinant of a square matrix using LU decomposition.
-    // Returns:
-    //   The determinant value (type fT); returns 0 if the matrix is singular
-    // Throws:
-    //   std::invalid_argument if the matrix is not square
+	
+
+	// Determinant Calculation
+	// ---------------------------------------
+	// Computes the determinant of a square matrix using LU decomposition.
+	// Returns:
+	//   The determinant value (type fT); returns 0 if the matrix is singular
+	// Throws:
+	//   std::invalid_argument if the matrix is not square
 	template<typename fT>
 	fT Matrix_06031927<fT>::Determinant() const {
 		if (rows != cols) {
@@ -414,14 +419,83 @@ namespace adv_prog_cw {
 		}
 		return det;
 	}
+*/
+	template<typename fT>
+	bool Matrix_06031927<fT>::DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const {
+		size_t n = A.Rows();
+		perm.resize(n);
+		for (size_t i = 0; i < n; i++) {
+			perm[i] = i;
+		}
+		swaps = 0;
+		const size_t blockSize = 64; // Blocking parameter (tune this for your architecture)
 
-    // Matrix Inversion
-    // ---------------------------------------
-    // Computes the inverse of the matrix and stores it in the result parameter.
-    // Parameters:
-    //   result - Matrix to store the inverse (resized to match this matrix)
-    // Returns:
-    //   true if the matrix is invertible, false if not (singular or not square)
+		for (size_t k = 0; k < n; k++) {
+			// Pivot selection (sequential search)
+			size_t pivotRow = k;
+			fT max_val = std::abs(A(perm[k], k));
+			for (size_t i = k + 1; i < n; i++) {
+				fT cur_val = std::abs(A(perm[i], k));
+				if (cur_val > max_val) {
+					max_val = cur_val;
+					pivotRow = i;
+				}
+			}
+			if (max_val == 0) {
+				return false; // Matrix is singular
+			}
+			if (pivotRow != k) {
+				std::swap(perm[k], perm[pivotRow]);
+				swaps++;
+			}
+			fT pivot = A(perm[k], k);
+
+			// Update the trailing submatrix with blocked inner loops
+			#pragma omp parallel for schedule(dynamic)
+			for (size_t i = k + 1; i < n; i++) {
+				fT m = A(perm[i], k) / pivot;
+				A(perm[i], k) = m;
+				// Block the inner update loop for better cache performance
+				for (size_t j = k + 1; j < n; j += blockSize) {
+					size_t j_end = std::min(j + blockSize, n);
+					for (size_t jj = j; jj < j_end; jj++) {
+						A(perm[i], jj) -= m * A(perm[k], jj);
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	template<typename fT>
+	fT Matrix_06031927<fT>::Determinant() const {
+		if (rows != cols) {
+			throw std::invalid_argument("Matrix must be square for determinant calculation");
+		}
+		// Make a copy of the matrix (LU decomposition is done in-place)
+		Matrix_06031927 A = *this;
+		std::vector<size_t> perm;
+		int swaps = 0;
+		if (!DecomposeLU(A, perm, swaps)) {
+			return static_cast<fT>(0); // Singular matrix
+		}
+		// Determinant is product of U's diagonal (adjust sign based on number of row swaps)
+		fT det = static_cast<fT>(1);
+		for (size_t i = 0; i < rows; i++) {
+			det *= A(perm[i], i);
+		}
+		if (swaps % 2 != 0) {
+			det = -det;
+		}
+		return det;
+	}
+	// Matrix Inversion
+	// ---------------------------------------
+	// Computes the inverse of the matrix and stores it in the result parameter.
+	// Parameters:
+	//   result - Matrix to store the inverse (resized to match this matrix)
+	// Returns:
+	//   true if the matrix is invertible, false if not (singular or not square)
 	template<typename fT>
 	bool Matrix_06031927<fT>::Inverse(Matrix_06031927& result) const {
 		if (rows != cols) {
@@ -494,7 +568,76 @@ namespace adv_prog_cw {
 		}
 		return true;
 	}
+	/*
+	template<typename fT>
+	bool Matrix_06031927<fT>::Inverse(Matrix_06031927& result) const {
+		if (rows != cols) {
+			return false; // Matrix must be square.
+		}
+		
+		// Compute LU decomposition (A is overwritten with L and U)
+		Matrix_06031927 A = *this;
+		std::vector<size_t> perm;
+		int swaps;
+		if (!DecomposeLU(A, perm, swaps)) {
+			return false; // Singular matrix.
+		}
+		
+		size_t n = rows;
+		result.Resize(n, n);
+		
+		// Initialize result as the permuted identity matrix.
+		// For each row ii of the factorization, set row perm[ii] to the corresponding identity row.
+		#pragma omp parallel for schedule(static)
+		for (size_t ii = 0; ii < n; ii++) {
+			size_t i = perm[ii];
+			for (size_t j = 0; j < n; j++) {
+				result(i, j) = (ii == j) ? static_cast<fT>(1) : static_cast<fT>(0);
+			}
+		}
+		
+		// Forward substitution: solve L * Y = P * I.
+		// We traverse the rows in the order of the permutation.
+		for (size_t ii = 0; ii < n; ii++) {
+			size_t i = perm[ii];
+			// The j-loop is independent once row i is reached.
+			#pragma omp parallel for schedule(static)
+			for (size_t j = 0; j < n; j++) {
+				for (size_t k = 0; k < ii; k++) {
+					// Subtract the contribution from previously solved rows.
+					result(i, j) -= A(i, k) * result(perm[k], j);
+				}
+			}
+		}
+		
+		// Backward substitution: solve U * X = Y.
+		// Again, iterate in permutation order (backwards).
+		for (int ii = static_cast<int>(n) - 1; ii >= 0; ii--) {
+			size_t i = perm[ii];
+			#pragma omp parallel for schedule(static)
+			for (size_t j = 0; j < n; j++) {
+				for (size_t k = ii + 1; k < n; k++) {
+					result(i, j) -= A(i, k) * result(perm[k], j);
+				}
+				result(i, j) /= A(i, ii);
+			}
+		}
+		
+		// The current result matrix has its rows stored in permuted order.
+		// We must restore the canonical order: for each row i of the final inverse,
+		// the correct data is currently in row perm[i] of result.
+		Matrix_06031927<fT> temp(result); // Make a copy.
+		#pragma omp parallel for schedule(static)
+		for (size_t i = 0; i < n; i++) {
+			for (size_t j = 0; j < n; j++) {
+				result(i, j) = temp(perm[i], j);
+			}
+		}
+		
+		return true;
+	}
 
+*/
     // Existing implementations continue here (operator+, operator-, etc.)...
 
     // Template instantiations (updated to include new methods implicitly)

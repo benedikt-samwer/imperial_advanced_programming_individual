@@ -89,7 +89,7 @@ double measureTime(Func operation, const string& operationName, size_t size) {
 
 int main() {
     // Test sizes
-    vector<size_t> sizes = {10, 100, 1000, 10000};
+    vector<size_t> sizes = {10, 100, 1000, 3000};
 /*
     // Accuracy Tests
     cout << "\n=== Accuracy Tests ===\n";
@@ -109,6 +109,9 @@ int main() {
 
         // Test Scalar Multiplication Speed
         measureTime([&]() { mat *= 2.5; }, "Scalar multiplication", size);
+
+        // Test Scalar Multiplication Speed
+        measureTime([&]() { mat /= 2.5; }, "Scalar Division", size);
 
         // Test Determinant Speed
         measureTime([&]() { mat.Determinant(); }, "Determinant calculation", size);
