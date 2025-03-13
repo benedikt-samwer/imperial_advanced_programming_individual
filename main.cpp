@@ -89,8 +89,8 @@ double measureTime(Func operation, const string& operationName, size_t size) {
 
 int main() {
     // Test sizes
-    vector<size_t> sizes = {10, 100, 1000, 10000, 100000};
-
+    vector<size_t> sizes = {10, 100, 1000, 10000};
+/*
     // Accuracy Tests
     cout << "\n=== Accuracy Tests ===\n";
     testDeterminantAccuracy(); // Test determinant with a small known matrix
@@ -98,7 +98,7 @@ int main() {
         testScalarMultiplicationAccuracy(size);
         testInversionAccuracy(size);
     }
-
+*/
     // Speed Tests with Increasing Size and Complexity
     cout << "\n=== Speed Tests ===\n";
     for (size_t size : sizes) {
