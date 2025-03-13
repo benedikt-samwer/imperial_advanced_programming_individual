@@ -14,15 +14,17 @@ using namespace std;
 using namespace std::chrono;
 typedef double fT; // Floating-point type for matrix elements
 
-// Function to generate a random matrix
+// Function to generate a 50% sparse random matrix
 Matrix_06031927<fT> generateRandomMatrix(size_t rows, size_t cols) {
     Matrix_06031927<fT> mat(rows, cols);
     random_device rd;
     mt19937 gen(rd());
-    uniform_real_distribution<fT> dis(-10.0, 10.0); // Random values between -10 and 10
+    uniform_real_distribution<fT> dis(-10.0, 10.0); // Values between -10 and 10
+    bernoulli_distribution sparse_prob(0.5); // 50% chance of being zero
+
     for (size_t i = 0; i < rows; i++) {
         for (size_t j = 0; j < cols; j++) {
-            mat(i, j) = dis(gen);
+            mat(i, j) = sparse_prob(gen) ? 0 : dis(gen);
         }
     }
     return mat;
@@ -83,7 +85,7 @@ int main() {
     }
 
     // Test sizes
-    vector<size_t> sizes = {10, 100, 500, 1000, 3000};
+    vector<size_t> sizes = {2,3, 10, 100, 500, 1000, 3000, 10000, 100000};
 
     // Speed Tests with Increasing Size and Complexity
     cout << "\n=== Speed Tests ===\n";
@@ -97,12 +99,14 @@ int main() {
         measureTime([&]() { mat *= 2; }, "Scalar multiplication", size);
         measureTime([&]() { mat /= 2; }, "Scalar division", size);
 
-        // Test Determinant Speed
-        measureTime([&]() { mat.Determinant(); }, "Determinant calculation", size);
-
         // Test Inversion Speed
         Matrix_06031927<fT> inv;
         measureTime([&]() { mat.Inverse(inv); }, "Matrix inversion", size);
+
+        // Test Determinant Speed
+        measureTime([&]() { mat.Determinant(); }, "Determinant calculation", size);
+
+
     }
 
     cout << "\nAll tests completed successfully." << endl;
