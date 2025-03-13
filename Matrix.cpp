@@ -344,81 +344,6 @@ namespace adv_prog_cw {
     //   - Determinant value of the matrix.
     // Throws:
     //   - std::length_error if the matrix is not square.
-
-    //---------------------- Helper Functions ----------------------//
-
-    // ExtractBlock: extracts a submatrix from A starting at (rowStart, colStart)
-    // with dimensions (numRows x numCols).
-    template<typename fT>
-    Matrix_06031927<fT> ExtractBlock(const Matrix_06031927<fT>& A, size_t rowStart, size_t colStart, size_t numRows, size_t numCols) {
-        Matrix_06031927<fT> block(numRows, numCols, 0);
-        for (size_t i = 0; i < numRows; i++) {
-            for (size_t j = 0; j < numCols; j++) {
-                block(i, j) = A(rowStart + i, colStart + j);
-            }
-        }
-        return block;
-    }
-
-    // SetBlock: sets the contents of B into matrix A starting at (rowStart, colStart).
-    template<typename fT>
-    void SetBlock(Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, size_t rowStart, size_t colStart) {
-        size_t numRows = B.Rows();
-        size_t numCols = B.Cols();
-        for (size_t i = 0; i < numRows; i++) {
-            for (size_t j = 0; j < numCols; j++) {
-                A(rowStart + i, colStart + j) = B(i, j);
-            }
-        }
-    }
-
-    // ParallelMultiply: performs matrix multiplication C = A * B using OpenMP.
-    template<typename fT>
-    void ParallelMultiply(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, Matrix_06031927<fT>& C) {
-        size_t m = A.Rows();
-        size_t p = A.Cols();
-        size_t n = B.Cols();
-        C.Resize(m, n);
-        #pragma omp parallel for schedule(static)
-        for (int i = 0; i < static_cast<int>(m); i++) {
-            for (size_t j = 0; j < n; j++) {
-                fT sum = 0;
-                for (size_t k = 0; k < p; k++) {
-                    sum += A(i, k) * B(k, j);
-                }
-                C(i, j) = sum;
-            }
-        }
-    }
-
-    // MatrixAdd: returns the matrix sum C = A + B.
-    template<typename fT>
-    Matrix_06031927<fT> MatrixAdd(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) {
-        size_t m = A.Rows(), n = A.Cols();
-        Matrix_06031927<fT> C(m, n, 0);
-        #pragma omp parallel for schedule(static)
-        for (int i = 0; i < static_cast<int>(m); i++) {
-            for (size_t j = 0; j < n; j++) {
-                C(i, j) = A(i, j) + B(i, j);
-            }
-        }
-        return C;
-    }
-
-    // MatrixSubtract: returns the matrix difference C = A - B.
-    template<typename fT>
-    Matrix_06031927<fT> MatrixSubtract(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) {
-        size_t m = A.Rows(), n = A.Cols();
-        Matrix_06031927<fT> C(m, n, 0);
-        #pragma omp parallel for schedule(static)
-        for (int i = 0; i < static_cast<int>(m); i++) {
-            for (size_t j = 0; j < n; j++) {
-                C(i, j) = A(i, j) - B(i, j);
-            }
-        }
-        return C;
-    }
-
     //------------------- Recursive Block Determinant -------------------//
 
     // BlockDeterminant recursively computes the determinant of a square matrix A.
@@ -500,40 +425,6 @@ namespace adv_prog_cw {
         return BlockDeterminant(*this, det);
     }
 
-    //------------------- Sample Implementations for Other Methods -------------------//
-
-    template<typename fT>
-    Matrix_06031927<fT>::Matrix_06031927(size_t m, size_t n, fT val)
-        : rows(m), cols(n), data(m, std::vector<fT>(n, val))
-    {
-    }
-
-    template<typename fT>
-    size_t Matrix_06031927<fT>::Rows() const { return rows; }
-
-    template<typename fT>
-    size_t Matrix_06031927<fT>::Cols() const { return cols; }
-
-    template<typename fT>
-    void Matrix_06031927<fT>::Resize(size_t m, size_t n) {
-        rows = m;
-        cols = n;
-        data.resize(m);
-        for (size_t i = 0; i < m; i++)
-            data[i].resize(n);
-    }
-
-    template<typename fT>
-    fT& Matrix_06031927<fT>::operator()(size_t i, size_t j) {
-        return data[i][j];
-    }
-
-    template<typename fT>
-    const fT& Matrix_06031927<fT>::operator()(size_t i, size_t j) const {
-        return data[i][j];
-    }
-
-    // Destructor and copy constructor would be implemented as needed.
 
     // ------------------------------------------------------------------
     // Step 3.4: Compute the Inverse of the Matrix
@@ -546,7 +437,81 @@ namespace adv_prog_cw {
     // Note:
     //   - This method uses the Gauss-Jordan elimination with partial pivoting.
 
-    
+    // -------------------- Helper Functions -------------------- //
+
+    // Extracts a submatrix from A starting at (rowStart, colStart)
+    // with dimensions (numRows x numCols).
+    template<typename fT>
+    Matrix_06031927<fT> ExtractBlock(const Matrix_06031927<fT>& A, size_t rowStart, size_t colStart, size_t numRows, size_t numCols) {
+        Matrix_06031927<fT> block(numRows, numCols, 0);
+        for (size_t i = 0; i < numRows; i++) {
+            for (size_t j = 0; j < numCols; j++) {
+                block(i, j) = A(rowStart + i, colStart + j);
+            }
+        }
+        return block;
+    }
+
+    // Sets a block into matrix A starting at (rowStart, colStart)
+    // with the contents of B.
+    template<typename fT>
+    void SetBlock(Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, size_t rowStart, size_t colStart) {
+        size_t numRows = B.Rows();
+        size_t numCols = B.Cols();
+        for (size_t i = 0; i < numRows; i++) {
+            for (size_t j = 0; j < numCols; j++) {
+                A(rowStart + i, colStart + j) = B(i, j);
+            }
+        }
+    }
+
+    // Parallel matrix multiplication: C = A * B.
+    template<typename fT>
+    void ParallelMultiply(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B, Matrix_06031927<fT>& C) {
+        size_t m = A.Rows();
+        size_t p = A.Cols();
+        size_t n = B.Cols();
+        C.Resize(m, n);
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < static_cast<int>(m); i++) {
+            for (size_t j = 0; j < n; j++) {
+                fT sum = 0;
+                for (size_t k = 0; k < p; k++) {
+                    sum += A(i, k) * B(k, j);
+                }
+                C(i, j) = sum;
+            }
+        }
+    }
+
+    // Matrix addition: C = A + B.
+    template<typename fT>
+    Matrix_06031927<fT> MatrixAdd(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) {
+        size_t m = A.Rows(), n = A.Cols();
+        Matrix_06031927<fT> C(m, n, 0);
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < static_cast<int>(m); i++) {
+            for (size_t j = 0; j < n; j++) {
+                C(i, j) = A(i, j) + B(i, j);
+            }
+        }
+        return C;
+    }
+
+    // Matrix subtraction: C = A - B.
+    template<typename fT>
+    Matrix_06031927<fT> MatrixSubtract(const Matrix_06031927<fT>& A, const Matrix_06031927<fT>& B) {
+        size_t m = A.Rows(), n = A.Cols();
+        Matrix_06031927<fT> C(m, n, 0);
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < static_cast<int>(m); i++) {
+            for (size_t j = 0; j < n; j++) {
+                C(i, j) = A(i, j) - B(i, j);
+            }
+        }
+        return C;
+    }
+
     // -------------------- Recursive Block Inversion -------------------- //
 
     // This function attempts to compute the inverse of matrix A (which must be square)
