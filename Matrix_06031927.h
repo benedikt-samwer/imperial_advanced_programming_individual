@@ -1,6 +1,6 @@
 // Step 1: RENAME THE _ADV_PROG_Matrix_06031927_H_ Label To _ADV_PROG_Matrix_06031927_%Your CID Nr%_H_. So, if your CID is 00112233, then the label should be named: _ADV_PROG_Matrix_06031927_00112233_H_
-#ifndef _ADV_PROG_Matrix_06031927_06031927_H_
-#define _ADV_PROG_Matrix_06031927_06031927_H_
+#ifndef _ADV_PROG_Matrix__06031927_H_
+#define _ADV_PROG_Matrix__06031927_H_
 
 #include <vector>
 #include <iostream>
@@ -41,11 +41,11 @@ namespace adv_prog_cw
 		// Step 3.2:  Division of the Matrix_06031927 by a scalar
 		Matrix_06031927& operator/=(fT scalar);
 		// Step 3.3:  A method to compute the determinant of square matrices
-		bool Determinant(fT& det) const;
+		fT Determinant() const;
 		// Step 3.4:  A method to compute the inverse of the Matrix_06031927
-		bool Inverse(Matrix_06031927& result) const;
+		bool Inverse(Matrix_06031927<fT>& result) const;
 		// Step 3.4:  A method to compute the inverse of the Matrix_06031927
-		bool Inverse2(Matrix_06031927& result) const;
+
 		
 	private:
 		std::vector<std::vector<fT> >  data;
@@ -53,8 +53,13 @@ namespace adv_prog_cw
 	
 		bool  CheckRange(size_t m, size_t n, const char* originator) const;
 		bool  CheckSizes(const Matrix_06031927& mat, const char* originator) const;
-		//bool  DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
-		//bool ParallelLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
+		bool  DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
+		bool ParallelLU(Matrix_06031927& A, 
+			std::vector<size_t>& perm, int& swaps, bool& earlyExit, 
+			double& log_det, int& sign_det) const;
+		//bool ParallelLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps, bool& earlyExit, double& log_det) const;
+		bool ParallelLUforinverse(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
+		//bool DirectInverse(const Matrix_06031927<fT>& A, Matrix_06031927<fT>& A_inv);
 	};
 
 	// associated operators

@@ -355,21 +355,25 @@ namespace adv_prog_cw {
 	//   swaps - Number of row swaps performed (affects determinant sign)
 	// Returns:
 	//   true if the matrix is non-singular, false if singular
-
+/*
 	template<typename fT>
-	bool Matrix_06031927<fT>::ParallelLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const {
+	bool Matrix_06031927<fT>::ParallelLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps, bool& earlyExit, double& log_det) const {
 		size_t n = A.Rows();
 		perm.resize(n);
-		for (size_t i = 0; i < n; i++) perm[i] = i;
+		for (size_t i = 0; i < n; i++) {
+			perm[i] = i;
+		}
 		swaps = 0;
-
-		const size_t blockSize = 128;  // Tuned for cache efficiency
-
+		earlyExit = false;
+		log_det = 0.0;
+	
+		const size_t blockSize = 128;      // Tuned for cache efficiency
+		const double INF_THRESHOLD = 710.0;  // Approximate threshold: ln(max_double) ~709.78
+	
 		for (size_t k = 0; k < n; k++) {
-			// **Parallel Pivot Selection**
+			// --- Pivot Selection ---
 			size_t pivotRow = k;
 			fT max_val = std::abs(A(perm[k], k));
-
 			#pragma omp parallel for reduction(max: max_val) reduction(max: pivotRow)
 			for (size_t i = k + 1; i < n; i++) {
 				fT cur_val = std::abs(A(perm[i], k));
@@ -378,27 +382,39 @@ namespace adv_prog_cw {
 					pivotRow = i;
 				}
 			}
-
-			// **Check for singularity**
-			if (max_val == static_cast<fT>(0)) return false;
-
-			// **Swap rows in permutation vector**
+	
+			// Check for singularity
+			if (max_val == static_cast<fT>(0))
+				return false;  // singular matrix
+	
+			// If the pivot itself is infinite, exit early
+			if (std::isinf(max_val)) {
+				earlyExit = true;
+				log_det += std::log(max_val);
+				break;
+			}
+	
+			// --- Row Swap ---
 			if (pivotRow != k) {
 				std::swap(perm[k], perm[pivotRow]);
 				swaps++;
 			}
-
+	
+			// --- Update log_det with the pivot value ---
 			fT pivot = A(perm[k], k);
-
-			// **Parallel Row Updates (Blocked)**
+			log_det += std::log(std::abs(pivot));
+			if (log_det > INF_THRESHOLD) {
+				earlyExit = true;
+				break;
+			}
+	
+			// --- LU Update ---
 			#pragma omp parallel for schedule(dynamic)
 			for (size_t i = k + 1; i < n; i++) {
 				fT m = A(perm[i], k) / pivot;
 				A(perm[i], k) = m;
-
 				for (size_t j = k + 1; j < n; j += blockSize) {
 					size_t j_end = std::min(j + blockSize, n);
-
 					#pragma omp simd
 					for (size_t jj = j; jj < j_end; jj++) {
 						A(perm[i], jj) -= m * A(perm[k], jj);
@@ -408,7 +424,113 @@ namespace adv_prog_cw {
 		}
 		return true;
 	}
+*/
+	template<typename fT>
+	bool Matrix_06031927<fT>::ParallelLU(Matrix_06031927& A, 
+		std::vector<size_t>& perm, int& swaps, bool& earlyExit, 
+		double& log_det, int& sign_det) const 
+	{
+		size_t n = A.Rows();
+		perm.resize(n);
+		for (size_t i = 0; i < n; i++) {
+			perm[i] = i;
+		}
+		swaps = 0;
+		earlyExit = false;
+		log_det = 0.0;
+		sign_det = 1; // Start with positive sign.
 
+		const size_t blockSize = 128;      // Tuned for cache efficiency
+		const double INF_THRESHOLD = 710.0;  // Approximate threshold: ln(max_double) ~709.78
+
+		for (size_t k = 0; k < n; k++) {
+			// --- Pivot Selection ---
+			size_t pivotRow = k;
+			fT max_val = std::abs(A(perm[k], k));
+			#pragma omp parallel for reduction(max: max_val) reduction(max: pivotRow)
+			for (size_t i = k + 1; i < n; i++) {
+				fT cur_val = std::abs(A(perm[i], k));
+				if (cur_val > max_val) {
+					max_val = cur_val;
+					pivotRow = i;
+				}
+			}
+
+			// Check for singularity.
+			if (max_val == static_cast<fT>(0))
+				return false;  // singular matrix
+
+			// If the pivot itself is infinite, exit early.
+			if (std::isinf(max_val)) {
+				earlyExit = true;
+				log_det += std::log(max_val);
+				break;
+			}
+
+			// --- Row Swap ---
+			if (pivotRow != k) {
+				std::swap(perm[k], perm[pivotRow]);
+				swaps++;
+				sign_det = -sign_det;  // Row swap flips the sign.
+			}
+
+			// --- Process the pivot ---
+			fT pivot = A(perm[k], k);
+			// Update sign_det based on the pivot's sign.
+			if (pivot < 0)
+				sign_det = -sign_det;
+
+			log_det += std::log(std::abs(pivot));
+			if (log_det > INF_THRESHOLD) {
+				earlyExit = true;
+				break;
+			}
+
+			// --- LU Update ---
+			#pragma omp parallel for schedule(dynamic)
+			for (size_t i = k + 1; i < n; i++) {
+				fT m = A(perm[i], k) / pivot;
+				A(perm[i], k) = m;
+				for (size_t j = k + 1; j < n; j += blockSize) {
+					size_t j_end = std::min(j + blockSize, n);
+					#pragma omp simd
+					for (size_t jj = j; jj < j_end; jj++) {
+						A(perm[i], jj) -= m * A(perm[k], jj);
+					}
+				}
+			}
+		}
+		return true;
+	}
+		template<typename fT>
+	fT Matrix_06031927<fT>::Determinant() const {
+		if (rows != cols) {
+			throw std::invalid_argument("Matrix must be square for determinant calculation");
+		}
+	
+		Matrix_06031927 A = *this;  // Work on a copy (LU is done in-place)
+		std::vector<size_t> perm;
+		int swaps = 0;
+		bool earlyExit = false;
+		double log_det = 0.0;
+		int sign_det = 1;  // Add this before the function call
+		if (!ParallelLU(A, perm, swaps, earlyExit, log_det, sign_det))
+			return static_cast<fT>(0);
+		// Call the modified LU decomposition that tracks cumulative log
+		//if (!ParallelLU(A, perm, swaps, earlyExit, log_det))
+		//	return static_cast<fT>(0);
+	
+		// If an early exit occurred, we know the final product will be infinite.
+		if (earlyExit)
+			return std::numeric_limits<fT>::infinity();
+	
+		// Otherwise, compute the determinant from the diagonal elements.
+		fT det = static_cast<fT>(1);
+		for (size_t i = 0; i < rows; i++) {
+			det *= A(perm[i], i);
+		}
+		return (swaps % 2 == 0) ? det : -det;
+	}
 
 	template<typename fT>
 	bool Matrix_06031927<fT>::DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const {
@@ -464,6 +586,7 @@ namespace adv_prog_cw {
 		}
 		return true;
 	}
+	/*
 	template<typename fT>
 	fT Matrix_06031927<fT>::Determinant() const {
 		if (rows != cols) {
@@ -474,20 +597,23 @@ namespace adv_prog_cw {
 		std::vector<size_t> perm;
 		int swaps = 0;
 	
+		// Using your LU decomposition routine (assumed to be ParallelLU or similar)
 		if (!ParallelLU(A, perm, swaps)) {
 			return static_cast<fT>(0); // Singular matrix
 		}
 	
-		// **Parallel Determinant Computation**
+		// Sequential determinant computation with early break on infinity.
 		fT det = static_cast<fT>(1);
-		#pragma omp parallel for reduction(*:det)
 		for (size_t i = 0; i < rows; i++) {
 			det *= A(perm[i], i);
+			if (std::isinf(det)) {  // Early termination if product becomes infinite
+				// Return the determinant immediately (swaps adjust sign; sign handling is preserved)
+				return (swaps % 2 == 0) ? det : -det;
+			}
 		}
 	
-		// Adjust sign based on row swaps
 		return (swaps % 2 == 0) ? det : -det;
-	}
+	}*/
 	
 
 	/*
@@ -769,7 +895,7 @@ namespace adv_prog_cw {
 		}
 		return true;
 	}
-	*/
+	
 	template<typename fT>
 	bool Matrix_06031927<fT>::Inverse(Matrix_06031927& result) const {
 		if (rows != cols) return false;  // Must be square
@@ -835,8 +961,192 @@ namespace adv_prog_cw {
 		}
 		return true;
 	}
-	
+	*/
 
+
+	template<typename fT>
+	bool Matrix_06031927<fT>::ParallelLUforinverse(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const {
+		size_t n = A.Rows();
+		perm.resize(n);
+		for (size_t i = 0; i < n; i++) {
+			perm[i] = i;
+		}
+		swaps = 0;
+		
+		for (size_t k = 0; k < n; k++) {
+			// --- Parallel Pivot Selection ---
+			size_t pivotRow = k;
+			fT max_val = std::abs(A(perm[k], k));
+			#pragma omp parallel for reduction(max: max_val) reduction(max: pivotRow)
+			for (size_t i = k + 1; i < n; i++) {
+				fT cur_val = std::abs(A(perm[i], k));
+				if (cur_val > max_val) {
+					max_val = cur_val;
+					pivotRow = i;
+				}
+			}
+			if (max_val == static_cast<fT>(0))
+				return false;  // singular matrix
+
+			// --- Swap pivot row ---
+			if (pivotRow != k) {
+				std::swap(perm[k], perm[pivotRow]);
+				swaps++;
+			}
+			fT pivot = A(perm[k], k);
+
+			// --- Update Trailing Submatrix ---
+			#pragma omp parallel for schedule(dynamic)
+			for (size_t i = k + 1; i < n; i++) {
+				fT m = A(perm[i], k) / pivot;
+				A(perm[i], k) = m;
+				#pragma omp simd
+				for (size_t j = k + 1; j < n; j++) {
+					A(perm[i], j) -= m * A(perm[k], j);
+				}
+			}
+		}
+		return true;
+	}
+/*
+	template<typename fT>
+	bool Matrix_06031927<fT>::Inverse(Matrix_06031927& result) const {
+		if (rows != cols) return false;  // Must be square
+		size_t n = rows;
+
+		// Step 1: Make a copy for in-place LU decomposition
+		Matrix_06031927 A = *this;
+		std::vector<size_t> perm(n);
+		for (size_t i = 0; i < n; i++) {
+			perm[i] = i;
+		}
+		int swaps;
+		// Use ParallelLU instead of the serial DecomposeLU:
+		if (!ParallelLUforinverse(A, perm, swaps)) return false; // Singular matrix
+
+		// Step 2: Compute inverse permutation vector.
+		std::vector<size_t> perm_inv(n);
+		for (size_t i = 0; i < n; i++) {
+			perm_inv[perm[i]] = i;
+		}
+
+		// Step 3: Resize the result matrix.
+		result.Resize(n, n);
+
+		// Step 4: Compute inverse columns in parallel.
+		#pragma omp parallel
+		{
+			// Allocate per-thread local vectors to avoid false sharing.
+			std::vector<fT> b(n, 0.0), y(n, 0.0), x(n, 0.0);
+
+			#pragma omp for schedule(dynamic)
+			for (size_t j = 0; j < n; j++) {
+				// Reset temporary vectors.
+				std::fill(b.begin(), b.end(), 0.0);
+				std::fill(y.begin(), y.end(), 0.0);
+				std::fill(x.begin(), x.end(), 0.0);
+
+				// Compute the right-hand side: b = P * e_j.
+				b[perm_inv[j]] = 1.0;
+
+				// Forward substitution (L * y = b).
+				for (size_t i = 0; i < n; i++) {
+					fT sum = 0.0;
+					size_t row_index = perm[i];
+					#pragma omp simd reduction(+:sum)
+					for (size_t k = 0; k < i; k++) {
+						sum += A(row_index, k) * y[k];
+					}
+					y[i] = b[i] - sum;
+				}
+
+				// Backward substitution (U * x = y).
+				for (int i = static_cast<int>(n) - 1; i >= 0; i--) {
+					fT sum = 0.0;
+					size_t row_index = perm[i];
+					#pragma omp simd reduction(+:sum)
+					for (size_t k = i + 1; k < n; k++) {
+						sum += A(row_index, k) * x[k];
+					}
+					x[i] = (y[i] - sum) / A(row_index, i);
+				}
+
+				// Store the computed column in the result.
+				for (size_t i = 0; i < n; i++) {
+					result(i, j) = x[i];
+				}
+			}
+		}
+		return true;
+	}
+*/
+	template<typename fT>
+	bool Matrix_06031927<fT>::Inverse(Matrix_06031927& result) const {
+		if (rows != cols) return false;  // Must be square
+		size_t n = rows;
+
+		// Step 1: Make a copy for in-place LU decomposition.
+		Matrix_06031927 A = *this;
+		std::vector<size_t> perm(n);
+		for (size_t i = 0; i < n; i++) {
+			perm[i] = i;
+		}
+		int swaps;
+		// Use the fully computed, parallel LU for inversion.
+		if (!ParallelLUforinverse(A, perm, swaps))
+			return false; // Singular matrix
+
+		// Step 2: Compute the inverse permutation vector.
+		std::vector<size_t> perm_inv(n);
+		for (size_t i = 0; i < n; i++) {
+			perm_inv[perm[i]] = i;
+		}
+
+		// Step 3: Resize the result matrix.
+		result.Resize(n, n);
+
+		// Step 4: Compute inverse columns in parallel.
+		#pragma omp parallel for schedule(dynamic)
+		for (size_t j = 0; j < n; j++) {
+			// Allocate per-thread local vectors.
+			// (Allocation here ensures they are private to each column solve.)
+			std::vector<fT> b(n, 0.0);
+			std::vector<fT> y(n, 0.0);
+			std::vector<fT> x(n, 0.0);
+
+			// Compute the right-hand side: b = P * e_j.
+			b[perm_inv[j]] = 1.0;
+
+			// Forward substitution: Solve L * y = b.
+			for (size_t i = 0; i < n; i++) {
+				fT sum = 0.0;
+				size_t row_index = perm[i];
+				#pragma omp simd reduction(+:sum)
+				for (size_t k = 0; k < i; k++) {
+					sum += A(row_index, k) * y[k];
+				}
+				y[i] = b[i] - sum;
+			}
+
+			// Backward substitution: Solve U * x = y.
+			for (int i = static_cast<int>(n) - 1; i >= 0; i--) {
+				fT sum = 0.0;
+				size_t row_index = perm[i];
+				#pragma omp simd reduction(+:sum)
+				for (size_t k = i + 1; k < n; k++) {
+					sum += A(row_index, k) * x[k];
+				}
+				x[i] = (y[i] - sum) / A(row_index, i);
+			}
+
+			// Store the computed column in the result.
+			// If your result matrix is stored contiguously, consider using std::copy.
+			for (size_t i = 0; i < n; i++) {
+				result(i, j) = x[i];
+			}
+		}
+		return true;
+	}
     // Existing implementations continue here (operator+, operator-, etc.)...
 
     // Template instantiations (updated to include new methods implicitly)

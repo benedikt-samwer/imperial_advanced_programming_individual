@@ -6,7 +6,7 @@
 #include <omp.h> // OpenMP for manual thread selection
 
 // Include your matrix header
-#include "Matrix_06031927.h"
+#include "Matrix.h"
 
 // Use the namespace to avoid prefixing every Matrix_06031927 with adv_prog_cw::
 using namespace adv_prog_cw;
@@ -21,7 +21,7 @@ Matrix_06031927<fT> generateRandomMatrix(size_t rows, size_t cols) {
     random_device rd;
     mt19937 gen(rd());
     uniform_real_distribution<fT> dis(-10.0, 10.0); // Values between -10 and 10
-    bernoulli_distribution sparse_prob(0.5); // 50% chance of being zero
+    bernoulli_distribution sparse_prob(0.1); // 50% chance of being zero
 
     for (size_t i = 0; i < rows; i++) {
         for (size_t j = 0; j < cols; j++) {
@@ -30,6 +30,8 @@ Matrix_06031927<fT> generateRandomMatrix(size_t rows, size_t cols) {
     }
     return mat;
 }
+
+
 
 // Test the determinant function with a known 2×2 matrix
 void testDeterminantAccuracy() {
@@ -49,18 +51,19 @@ void testDeterminantAccuracy() {
     cout << "Determinant accuracy test passed for 2x2 matrix." << endl;
 }
 
-// Test the inversion function on a small matrix
 void testInversionAccuracy(size_t size) {
     Matrix_06031927<fT> mat = generateRandomMatrix(size, size);
-    Matrix_06031927<fT> inv;
-    bool success = mat.Inverse(inv);
-
-    if (success) {
-        // Optional: verify inv is truly the inverse by multiplying mat * inv and checking if it's close to identity
-        // For brevity, just confirm we didn't fail:
+    
+    try {
+        Matrix_06031927<fT> inv = mat.Inverse();  // Now directly gets the inverse
         cout << "Matrix inversion test passed for " << size << "x" << size << " matrix." << endl;
-    } else {
-        cout << "Matrix inversion skipped (singular matrix) for " << size << "x" << size << "." << endl;
+
+        // Optional: Verify correctness by checking if mat * inv ≈ Identity
+        // Matrix_06031927<fT> identity = mat * inv; 
+        // if (isApproximatelyIdentity(identity)) { cout << "Inverse verified!" << endl; }
+
+    } catch (const std::runtime_error& e) {
+        cout << "Matrix inversion skipped (singular matrix) for " << size << "x" << size << ": " << e.what() << endl;
     }
 }
 
@@ -119,9 +122,6 @@ int main() {
         measureTime([&]() { mat *= 2; }, "Scalar multiplication", size);
         measureTime([&]() { mat /= 2; }, "Scalar division", size);
 
-        // Test Inversion Speed
-        Matrix_06031927<fT> inv;
-        measureTime([&]() { mat.Inverse(inv); }, "Matrix inversion", size);
 
         // Test Determinant Speed
         measureTime([&]() { 
@@ -130,8 +130,17 @@ int main() {
                 cerr << "Determinant calculation failed!" << endl;
             }
         }, "Determinant calculation", size);
-    }
+    
 
+        measureTime([&]() { 
+            try {
+                Matrix_06031927<fT> inv = mat.Inverse();  // Now stores the result directly
+            } catch (const std::runtime_error& e) {
+                cout << "Matrix inversion failed for " << size << "x" << size << ": " << e.what() << endl;
+            }
+        }, "Matrix inversion", size);
+
+    }
     cout << "\nAll tests completed successfully." << endl;
     return 0;
 }

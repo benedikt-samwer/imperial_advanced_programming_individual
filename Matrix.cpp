@@ -1,4 +1,4 @@
-#include "Matrix_06031927.h"
+#include "Matrix.h"
 #include <cassert>
 #include <vector>
 #include <cmath>
@@ -14,7 +14,6 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
-#include <omp.h>
 
 
 using namespace std;
@@ -354,21 +353,22 @@ namespace adv_prog_cw {
     //   true if the determinant is computed successfully, false otherwise.
     template<typename fT>
     bool BlockDeterminant(const Matrix_06031927<fT>& A, fT &det) {
+        
         size_t n = A.Rows();
         const fT epsilon = static_cast<fT>(1e-12);
-        
+    
         // Base case: 1x1 matrix.
-        if(n == 1) {
+        if (n == 1) {
             det = A(0, 0);
             return true;
         }
-        // Base case: 2x2 matrix using the formula:
-        // det = a11*a22 - a12*a21.
-        if(n == 2) {
+        // Base case: 2x2 matrix using the formula: det = a11*a22 - a12*a21.
+        if (n == 2) {
+            //std::cerr << "DEBUG: Reached the 2x2 determinant base case point." << std::endl;
             det = A(0,0) * A(1,1) - A(0,1) * A(1,0);
             return true;
         }
-        
+    
         // Partition A into four blocks.
         size_t k = n / 2;       // Size of block A11.
         size_t r = n - k;       // Size of the remaining blocks.
@@ -376,44 +376,52 @@ namespace adv_prog_cw {
         Matrix_06031927<fT> A12 = ExtractBlock(A, 0, k, k, r);
         Matrix_06031927<fT> A21 = ExtractBlock(A, k, 0, r, k);
         Matrix_06031927<fT> A22 = ExtractBlock(A, k, k, r, r);
-        
+    
         // Compute determinant of A11 recursively.
         fT detA11;
-        if (!BlockDeterminant(A11, detA11))
+        if (!BlockDeterminant(A11, detA11)) {
+            std::cerr << "Error: Failed to compute determinant for A11 block (size " << k << "x" << k << ")." << std::endl;
             return false;
+        }
+    
         // If A11 is nearly singular, the determinant is (practically) zero.
         if (std::abs(detA11) < epsilon) {
+            std::cerr << "Warning: A11 block is nearly singular (det ≈ 0). Setting determinant to zero." << std::endl;
             det = 0;
             return true;
         }
-        
+    
         // To form the Schur complement, we need A11^{-1}.
         // We use our previously defined BlockInverse method.
         Matrix_06031927<fT> A11_inv;
         if (!BlockInverse(A11, A11_inv)) {  // If A11 is singular.
+            std::cerr << "Error: A11 block is singular. Cannot compute inverse." << std::endl;
             det = 0;
             return true;
         }
-        
+    
         // Compute the product A21 * A11_inv * A12.
         Matrix_06031927<fT> temp;
         ParallelMultiply(A11_inv, A12, temp);
         Matrix_06031927<fT> prod;
         ParallelMultiply(A21, temp, prod);
-        
+    
         // Compute the Schur complement: S = A22 - A21*A11^{-1}A12.
         Matrix_06031927<fT> S = MatrixSubtract(A22, prod);
-        
+    
         // Recursively compute the determinant of the Schur complement.
         fT detS;
-        if (!BlockDeterminant(S, detS))
+        if (!BlockDeterminant(S, detS)) {
+            std::cerr << "Error: Failed to compute determinant for Schur complement (size " << r << "x" << r << ")." << std::endl;
             return false;
-        
+        }
+    
         // The determinant of A is given by:
         // det(A) = det(A11) * det(S)
         det = detA11 * detS;
         return true;
     }
+    
 
     //------------------- Public Determinant() Method -------------------//
 
@@ -512,6 +520,174 @@ namespace adv_prog_cw {
         return C;
     }
 
+    /*working non parallelized verison
+    template<typename fT>
+    bool DirectInverse(const Matrix_06031927<fT>& A, Matrix_06031927<fT>& A_inv) {
+        size_t n = A.Rows();
+        A_inv = A;  // Copy input matrix (we will modify it)
+        Matrix_06031927<fT> I(n, n, 0);
+        
+        // Initialize identity matrix
+        for (size_t i = 0; i < n; i++)
+            I(i, i) = static_cast<fT>(1);
+
+        // Gaussian elimination with partial pivoting
+        for (size_t i = 0; i < n; i++) {
+            // Pivot selection: Swap row with max element
+            size_t maxRow = i;
+            for (size_t k = i + 1; k < n; k++) {
+                if (std::abs(A_inv(k, i)) > std::abs(A_inv(maxRow, i))) {
+                    maxRow = k;
+                }
+            }
+            if (std::abs(A_inv(maxRow, i)) < 1e-12) return false;  // Singular matrix
+
+            // Swap rows in A_inv and identity matrix
+            for (size_t j = 0; j < n; j++) {
+                std::swap(A_inv(i, j), A_inv(maxRow, j));
+                std::swap(I(i, j), I(maxRow, j));
+            }
+
+            // Normalize row
+            fT pivot = A_inv(i, i);
+            for (size_t j = 0; j < n; j++) {
+                A_inv(i, j) /= pivot;
+                I(i, j) /= pivot;
+            }
+
+            // Eliminate other rows
+            for (size_t k = 0; k < n; k++) {
+                if (k == i) continue;
+                fT factor = A_inv(k, i);
+                for (size_t j = 0; j < n; j++) {
+                    A_inv(k, j) -= factor * A_inv(i, j);
+                    I(k, j) -= factor * I(i, j);
+                }
+            }
+        }
+
+    A_inv = I;  // Store the computed inverse
+    return true;
+}
+    template<typename fT>
+    bool DirectInverse(const Matrix_06031927<fT>& A, Matrix_06031927<fT>& A_inv) {
+        //std::cerr << "DEBUG: Reached this direct inversion point." << std::endl;
+        size_t n = A.Rows();
+        A_inv = A;  // Copy A into A_inv for modification
+        Matrix_06031927<fT> I(n, n, 0);
+        
+        // Initialize identity matrix
+        for (size_t i = 0; i < n; i++) {
+            I(i, i) = static_cast<fT>(1);
+        }
+
+        // Gaussian elimination with partial pivoting
+        for (size_t i = 0; i < n; i++) {
+            // 1. Pivot selection (SEQUENTIAL)
+            size_t maxRow = i;
+            for (size_t k = i + 1; k < n; k++) {
+                if (std::abs(A_inv(k, i)) > std::abs(A_inv(maxRow, i))) {
+                    maxRow = k;
+                }
+            }
+            if (std::abs(A_inv(maxRow, i)) < 1e-12) return false;  // Matrix is singular
+
+            // 2. Row swapping (SEQUENTIAL)
+            if (maxRow != i) {
+                for (size_t j = 0; j < n; j++) {
+                    std::swap(A_inv(i, j), A_inv(maxRow, j));
+                    std::swap(I(i, j), I(maxRow, j));
+                }
+            }
+
+            // 3. Normalize pivot row (PARALLELIZED)
+            fT pivot = A_inv(i, i);
+            #pragma omp parallel for schedule(static)
+            for (size_t j = 0; j < n; j++) {
+                A_inv(i, j) /= pivot;
+                I(i, j) /= pivot;
+            }
+
+            // 4. Row elimination (PARALLELIZED)
+            #pragma omp parallel for schedule(static)
+            for (size_t k = 0; k < n; k++) {
+                if (k == i) continue;
+                fT factor = A_inv(k, i);
+                for (size_t j = 0; j < n; j++) {
+                    A_inv(k, j) -= factor * A_inv(i, j);
+                    I(k, j) -= factor * I(i, j);
+                }
+            }
+        }
+
+        A_inv = I;  // The identity matrix I now contains the inverse
+        return true;
+    }*/
+
+
+    template<typename fT>
+    bool DirectInverse(const Matrix_06031927<fT>& A, Matrix_06031927<fT>& A_inv) {
+        size_t n = A.Rows();
+        A_inv = A;  // Copy A into A_inv for modification
+        Matrix_06031927<fT> I(n, n, 0);
+
+        // Initialize identity matrix
+        #pragma omp parallel for
+        for (size_t i = 0; i < n; i++) {
+            I(i, i) = static_cast<fT>(1);
+        }
+
+        // Gaussian elimination with parallel optimizations
+        for (size_t i = 0; i < n; i++) {
+            // === 1. Pivot Selection (PARALLEL) ===
+            size_t maxRow = i;
+            fT maxVal = std::abs(A_inv(i, i));
+
+            #pragma omp parallel for reduction(max: maxVal) // Find row with largest absolute value
+            for (size_t k = i + 1; k < n; k++) {
+                fT absVal = std::abs(A_inv(k, i));
+                if (absVal > maxVal) {
+                    #pragma omp critical
+                    {
+                        maxRow = k;
+                        maxVal = absVal;
+                    }
+                }
+            }
+            if (maxVal < 1e-12) return false;  // Matrix is singular
+
+            // === 2. Row Swapping (PARALLEL) ===
+            if (maxRow != i) {
+                #pragma omp parallel for
+                for (size_t j = 0; j < n; j++) {
+                    std::swap(A_inv(i, j), A_inv(maxRow, j));
+                    std::swap(I(i, j), I(maxRow, j));
+                }
+            }
+
+            // === 3. Normalize Pivot Row (PARALLEL) ===
+            fT pivot = A_inv(i, i);
+            #pragma omp parallel for
+            for (size_t j = 0; j < n; j++) {
+                A_inv(i, j) /= pivot;
+                I(i, j) /= pivot;
+            }
+
+            // === 4. Row Elimination (PARALLEL) ===
+            #pragma omp parallel for
+            for (size_t k = 0; k < n; k++) {
+                if (k == i) continue;
+                fT factor = A_inv(k, i);
+                for (size_t j = 0; j < n; j++) {
+                    A_inv(k, j) -= factor * A_inv(i, j);
+                    I(k, j) -= factor * I(i, j);
+                }
+            }
+        }
+
+        A_inv = I;  // The identity matrix I now contains the inverse
+        return true;
+    }
     // -------------------- Recursive Block Inversion -------------------- //
 
     // This function attempts to compute the inverse of matrix A (which must be square)
@@ -520,6 +696,14 @@ namespace adv_prog_cw {
     template<typename fT>
     bool BlockInverse(const Matrix_06031927<fT>& A, Matrix_06031927<fT>& A_inv) {
         size_t n = A.Rows();
+        
+          
+        const size_t BASE_CASE_SIZE =64;  // Adjust as needed
+        if (n <= BASE_CASE_SIZE) {
+            return DirectInverse(A, A_inv);  // Use efficient direct inversion for small matrices
+        }
+
+      /*
         // Base case: 1x1 matrix.
         if(n == 1) {
             const fT eps = static_cast<fT>(1e-12);
@@ -529,7 +713,22 @@ namespace adv_prog_cw {
             A_inv(0,0) = static_cast<fT>(1) / A(0,0);
             return true;
         }
-
+        // Base case: 2x2 matrix using the formula: inv(A) = (1/det(A)) * adj(A).
+        if(n == 2) {
+            fT det;
+            if (!BlockDeterminant(A, det))
+                return false;
+            if (std::abs(det) < 1e-12)
+                return false;
+            fT invDet = static_cast<fT>(1) / det;
+            A_inv.Resize(2,2);
+            A_inv(0,0) =  A(1,1) * invDet;
+            A_inv(0,1) = -A(0,1) * invDet;
+            A_inv(1,0) = -A(1,0) * invDet;
+            A_inv(1,1) =  A(0,0) * invDet;
+            return true;
+        }
+        */
         // Partition A into 4 blocks.
         size_t k = n / 2;         // size of A11 (rows and columns)
         size_t r = n - k;         // remaining rows/columns for A22
@@ -623,7 +822,7 @@ namespace adv_prog_cw {
     }
 
     // -------------------- Inverse() Method Implementation -------------------- //
-
+/*
     template<typename fT>
     bool Matrix_06031927<fT>::Inverse(Matrix_06031927<fT>& result) const {
         // The matrix must be square.
@@ -631,6 +830,17 @@ namespace adv_prog_cw {
             return false;
         return BlockInverse(*this, result);
     }
+*/
+    template<typename fT>
+    Matrix_06031927<fT> Matrix_06031927<fT>::Inverse() const {
+        Matrix_06031927<fT> A_inv;  // Matrix to store the result
+        if (!BlockInverse(*this, A_inv)) {
+            throw std::runtime_error("Matrix is singular, cannot compute inverse.");
+        }
+        return A_inv;  // Return the computed inverse
+    }
+
+
     template<typename fT>
     bool Matrix_06031927<fT>::Inverse2(Matrix_06031927<fT>& result) const {
         // The matrix must be square for an inverse to exist.
