@@ -53,13 +53,10 @@ namespace adv_prog_cw
 	
 		bool  CheckRange(size_t m, size_t n, const char* originator) const;
 		bool  CheckSizes(const Matrix_06031927& mat, const char* originator) const;
-		bool  DecomposeLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
 		bool ParallelLU(Matrix_06031927& A, 
 			std::vector<size_t>& perm, int& swaps, bool& earlyExit, 
 			double& log_det, int& sign_det) const;
-		//bool ParallelLU(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps, bool& earlyExit, double& log_det) const;
 		bool ParallelLUforinverse(Matrix_06031927& A, std::vector<size_t>& perm, int& swaps) const;
-		//bool DirectInverse(const Matrix_06031927<fT>& A, Matrix_06031927<fT>& A_inv);
 	};
 
 	// associated operators

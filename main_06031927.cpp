@@ -111,6 +111,7 @@ double measureTime(Func operation, const string& operationName, size_t size) {
     return elapsed.count();
 }
 
+/*
 int main() {
     // Allow user to set the number of OpenMP threads.
     int num_threads;
@@ -170,3 +171,5 @@ int main() {
     cout << "\nAll tests completed successfully." << endl;
     return 0;
 }
+
+*/
